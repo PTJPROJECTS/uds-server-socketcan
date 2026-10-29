@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cc: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: build (warnings are errors)
+        run: make CC=${{ matrix.cc }} CFLAGS="-O2 -g -Werror"
+
+      - name: python deps
+        run: pip install -r requirements.txt
+
+      - name: tests (udp loopback bus)
+        run: python -m pytest -v tests
+
+      - name: tests again with ASan/UBSan
+        if: matrix.cc == 'gcc'
+        run: make asan
+
+      # vcan needs linux-modules-extra on the runner kernel. If that ever
+      # breaks on GitHub's side I don't want the whole build red.
+      - name: set up vcan0
+        id: vcan
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-modules-extra-$(uname -r) can-utils
+          ./scripts/setup_vcan.sh vcan0
+
+      - name: tests (vcan0)
+        if: steps.vcan.outcome == 'success'
+        env:
+          UDS_TRANSPORT: socketcan
+          UDS_CHANNEL: vcan0
+        run: python -m pytest -v tests
