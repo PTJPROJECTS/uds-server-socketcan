@@ -155,3 +155,39 @@ def test_stray_consecutive_frame_ignored(bus):
 def test_sf_with_zero_length_ignored(bus):
     send(bus, [0x00, 0x3E, 0x00])
     assert recv_rsp(bus, 0.2) is None
+
+
+# --- server rx side with a block size set (-b) ---
+
+@pytest.fixture(scope="module")
+def bs1_bus():
+    import subprocess
+    from conftest import SERVER, TRANSPORT, _free_udp_port
+    from uds_client import make_bus
+
+    if TRANSPORT != "udp":
+        pytest.skip("needs a second server, only done on the udp bus")
+    sp, cp = _free_udp_port(), _free_udp_port()
+    proc = subprocess.Popen([SERVER, "-u", f"{sp}:{cp}", "-b", "1", "-m", "5", "-p", "0"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(0.3)
+    b = make_bus(udp=f"{cp}:{sp}")
+    yield b
+    b.shutdown()
+    proc.terminate()
+    proc.wait(timeout=3)
+
+
+def test_server_rx_block_size_1(bs1_bus):
+    # 22 + 8 DIDs = 17 bytes -> FF(6) + CF(7) + CF(4)
+    # with BS=1 the server must send a FC after the first CF too
+    req = [0x22] + [0xF1, 0x95, 0xF1, 0x86, 0x01, 0x01, 0xF1, 0x8C] * 2
+    send(bs1_bus, [0x10, len(req)] + req[:6])
+    fc = recv_rsp(bs1_bus)
+    assert list(fc.data[:3]) == [0x30, 0x01, 0x05]
+    send(bs1_bus, [0x21] + req[6:13])
+    fc = recv_rsp(bs1_bus)
+    assert list(fc.data[:3]) == [0x30, 0x01, 0x05]
+    send(bs1_bus, [0x22] + req[13:])
+    ff = recv_rsp(bs1_bus)
+    assert ff.data[0] >> 4 == 1 and ff.data[2] == 0x62

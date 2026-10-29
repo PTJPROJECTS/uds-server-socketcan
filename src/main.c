@@ -29,6 +29,8 @@ static void usage(const char *prog)
             "  -u L:R    UDP loopback bus, listen on L, send to R\n"
             "  -s MS     S3 session timeout in ms (default %d)\n"
             "  -p MS     status frame period in ms, 0 = off (default 100)\n"
+            "  -b BS     block size we send in our flow control (default 0)\n"
+            "  -m STMIN  STmin we send in our flow control, raw byte (default 0)\n"
             "  -v        print every frame (candump style)\n",
             prog, UDS_S3_MS_DEFAULT);
 }
@@ -61,6 +63,7 @@ int main(int argc, char **argv)
     uint32_t s3_ms = UDS_S3_MS_DEFAULT;
     uint32_t period_ms = 100;
     int trace = 0;
+    unsigned fc_bs = 0, fc_stmin = 0;
     int i, rc;
     uint8_t alive = 0;
     uint64_t next_status;
@@ -76,6 +79,10 @@ int main(int argc, char **argv)
             s3_ms = (uint32_t)strtoul(argv[++i], NULL, 0);
         } else if (!strcmp(argv[i], "-p") && i + 1 < argc) {
             period_ms = (uint32_t)strtoul(argv[++i], NULL, 0);
+        } else if (!strcmp(argv[i], "-b") && i + 1 < argc) {
+            fc_bs = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (!strcmp(argv[i], "-m") && i + 1 < argc) {
+            fc_stmin = (unsigned)strtoul(argv[++i], NULL, 0);
         } else if (!strcmp(argv[i], "-v")) {
             trace = 1;
         } else {
@@ -106,6 +113,8 @@ int main(int argc, char **argv)
     signal(SIGTERM, on_signal);
 
     isotp_init(&link, &cif, REQ_ID, RSP_ID, FUNC_ID);
+    link.bs = (uint8_t)fc_bs;
+    link.stmin = (uint8_t)fc_stmin;
     uds_init(&uds, s3_ms);
 
     printf("uds_server up on %s (req 0x%03X rsp 0x%03X func 0x%03X), S3=%u ms\n",
