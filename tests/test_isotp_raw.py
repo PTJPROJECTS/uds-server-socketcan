@@ -138,6 +138,21 @@ def test_n_bs_timeout_then_recovers(bus):
     assert list(recv_rsp(bus).data[:3]) == [0x02, 0x7E, 0x00]
 
 
+def test_status_frame_keeps_going_while_waiting_for_fc(bus):
+    # first version blocked the whole loop in isotp_send, so 0x3A0 went
+    # quiet for the full 1 s N_Bs timeout
+    send_sf(bus, [0x22, 0xF1, 0x90])            # VIN -> FF, we never answer
+    stamps = []
+    end = time.time() + 1.3
+    while time.time() < end:
+        m = bus.recv(0.05)
+        if m is not None and m.arbitration_id == 0x3A0:
+            stamps.append(m.timestamp)
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert len(stamps) >= 10
+    assert max(gaps) < 0.2
+
+
 def test_wrong_sequence_number_dropped(bus):
     send(bus, [0x10, len(BIG_REQ)] + BIG_REQ[:6])
     assert recv_rsp(bus).data[0] == 0x30

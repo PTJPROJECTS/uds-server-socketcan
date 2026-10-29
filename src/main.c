@@ -35,22 +35,39 @@ static void usage(const char *prog)
             prog, UDS_S3_MS_DEFAULT);
 }
 
-static void send_status(can_if_t *cif, const uds_server_t *uds, uint8_t *alive,
-                        uint64_t now)
-{
-    can_msg_t m;
-    uint16_t cv = uds_battery_cv(now);
+struct status_ctx {
+    can_if_t *cif;
+    const uds_server_t *uds;
+    uint32_t period_ms;
+    uint64_t next;
+    uint8_t alive;
+};
 
+static void status_tick(void *arg)
+{
+    struct status_ctx *st = arg;
+    uint64_t now = now_ms();
+    uint16_t cv;
+    can_msg_t m;
+
+    if (!st->period_ms || now < st->next)
+        return;
+
+    cv = uds_battery_cv(now);
     memset(&m, 0, sizeof(m));
     m.id = STATUS_ID;
     m.dlc = 8;
     m.data[0] = (uint8_t)(cv & 0xFF);   /* little endian, matches the DBC */
     m.data[1] = (uint8_t)(cv >> 8);
-    m.data[2] = uds->session;
-    m.data[3] = *alive & 0x0F;
-    m.data[4] = uds->reset_count;
-    can_if_send(cif, &m);
-    *alive = (uint8_t)((*alive + 1) & 0x0F);
+    m.data[2] = st->uds->session;
+    m.data[3] = st->alive & 0x0F;
+    m.data[4] = st->uds->reset_count;
+    can_if_send(st->cif, &m);
+    st->alive = (uint8_t)((st->alive + 1) & 0x0F);
+
+    st->next += st->period_ms;
+    if (st->next < now)     /* we fell behind, don't burst */
+        st->next = now + st->period_ms;
 }
 
 int main(int argc, char **argv)
@@ -65,8 +82,7 @@ int main(int argc, char **argv)
     int trace = 0;
     unsigned fc_bs = 0, fc_stmin = 0;
     int i, rc;
-    uint8_t alive = 0;
-    uint64_t next_status;
+    struct status_ctx st;
     static uint8_t req[ISOTP_MAX_PAYLOAD];
     static uint8_t rsp[ISOTP_MAX_PAYLOAD];
 
@@ -115,13 +131,19 @@ int main(int argc, char **argv)
     isotp_init(&link, &cif, REQ_ID, RSP_ID, FUNC_ID);
     link.bs = (uint8_t)fc_bs;
     link.stmin = (uint8_t)fc_stmin;
+    link.on_idle = status_tick;
+    link.idle_arg = &st;
     uds_init(&uds, s3_ms);
 
     printf("uds_server up on %s (req 0x%03X rsp 0x%03X func 0x%03X), S3=%u ms\n",
            cif.name, REQ_ID, RSP_ID, FUNC_ID, (unsigned)s3_ms);
     fflush(stdout);
 
-    next_status = now_ms() + period_ms;
+    st.cif = &cif;
+    st.uds = &uds;
+    st.period_ms = period_ms;
+    st.next = now_ms() + period_ms;
+    st.alive = 0;
 
     while (running) {
         can_msg_t m;
@@ -129,8 +151,8 @@ int main(int argc, char **argv)
         uint64_t now = now_ms();
         int wait = 10;
 
-        if (period_ms && next_status > now && next_status - now < (uint64_t)wait)
-            wait = (int)(next_status - now);
+        if (period_ms && st.next > now && st.next - now < (uint64_t)wait)
+            wait = (int)(st.next - now);
 
         rc = can_if_recv(&cif, &m, wait);
         if (rc < 0)
@@ -152,12 +174,7 @@ int main(int argc, char **argv)
         isotp_poll(&link, now);
         uds_tick(&uds, now);
 
-        if (period_ms && now >= next_status) {
-            send_status(&cif, &uds, &alive, now);
-            next_status += period_ms;
-            if (next_status < now)  /* we fell behind, don't burst */
-                next_status = now + period_ms;
-        }
+        status_tick(&st);
         fflush(stdout);
     }
 

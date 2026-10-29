@@ -174,7 +174,10 @@ static int wait_fc(isotp_link_t *l, uint8_t *bs, uint8_t *stmin)
 
         if (t >= deadline)
             return -1;
-        rc = can_if_recv(l->cif, &m, (int)(deadline - t));
+        /* short slices so on_idle runs often enough for a 100 ms frame */
+        rc = can_if_recv(l->cif, &m, deadline - t > 10 ? 10 : (int)(deadline - t));
+        if (l->on_idle)
+            l->on_idle(l->idle_arg);
         if (rc < 0)
             return -1;
         if (rc == 0)

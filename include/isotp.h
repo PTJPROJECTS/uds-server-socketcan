@@ -49,6 +49,13 @@ typedef struct {
     uint8_t  rx_sn;
     uint8_t  rx_bs_cnt;
     uint64_t rx_deadline;
+
+    /*
+     * Called while isotp_send() is blocked waiting for a FC, so the app
+     * can keep doing periodic stuff (status frame). Optional.
+     */
+    void (*on_idle)(void *arg);
+    void *idle_arg;
 } isotp_link_t;
 
 void isotp_init(isotp_link_t *l, can_if_t *cif, uint32_t rx_id, uint32_t tx_id,
