@@ -139,7 +139,7 @@ def test_reset_unsupported_type(client):
 
 # --- misc ---
 
-@pytest.mark.parametrize("sid", [0x27, 0x2E, 0x31, 0x19])
+@pytest.mark.parametrize("sid", [0x27, 0x2E, 0x31, 0x19], ids=lambda s: f"0x{s:02X}")
 def test_unknown_service(client, sid):
     assert nrc(client.request([sid, 0x01])) == 0x11
 
