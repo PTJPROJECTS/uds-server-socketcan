@@ -1,0 +1,21 @@
+VERSION ""
+
+NS_ :
+    CM_
+    VAL_
+
+BS_:
+
+BU_: ECU TESTER
+
+BO_ 928 ECU_Status: 8 ECU
+ SG_ BatteryVoltage : 0|16@1+ (0.01,0) [0|655.35] "V" TESTER
+ SG_ ActiveSession : 16|8@1+ (1,0) [0|255] "" TESTER
+ SG_ AliveCounter : 24|4@1+ (1,0) [0|15] "" TESTER
+ SG_ ResetCount : 32|8@1+ (1,0) [0|255] "" TESTER
+
+CM_ BO_ 928 "Sent by the ECU every 100 ms (uds_server -p to change)";
+CM_ SG_ 928 AliveCounter "Wraps 0..15, a gap means a dropped frame";
+CM_ SG_ 928 ResetCount "Counts ECUReset (0x11) since power up";
+
+VAL_ 928 ActiveSession 1 "Default" 2 "Programming" 3 "Extended" ;
